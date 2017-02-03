@@ -2,10 +2,7 @@
 
 ![IAMDinosaur](https://raw.githubusercontent.com/ivanseidel/IAMDinosaur/master/assets/top_score.png)
 
-A simple artificial intelligence to teach Google Chrome's offline dinosaur to
-jump cactus, using Neural Networks and a simple Genetic Algorithm.
-
-**Watch** this video to see it in action, and learn how it works: [Artificial Inteligence with Google's Dinosaur](https://youtu.be/P7XHzqZjXQs)
+A simple artificial intelligence to teach Google Chrome's offline dinosaur to play the game by itself (The goal of the game is to avoide the obstacles), using Reinforcement Learning.
 
 ## Installation
 
@@ -33,34 +30,30 @@ We have 3 different inputs read from the pixels of the screen:
 
 We have also, one output with 3 possible states:
 
-1. output < 0.45: Press DOWN key
-2. output > 0.55: Press UP key
-2. default: Release both keys
+1. output = 0.00: Press DOWN key
+2. output = 1.00: Press UP key
+2. output = 0.50: Release both keys
 
-## Genetic Algorithm
+## Reinforcement Learning Algorithm
 
-Each Generation consists of 12 neural networks (Genomes). 
+There are currently 3 sensors:
 
-Each genome is tested with the game, by constantly mapping the read 
-inputs from  the game to the inputs of the neural network, and by getting
-the output/activation from the network and applying to the keys of the
-keyboard.
+1.For sensing smaller cacti & pterodactyls flying at the bottom, 
+2.For sensing larger cacti & pterodactyls flying in the middle, and 
+3.For sensing the pterodactlys flying above the dinosaur's head.
 
-While testing each genome, we keep track of it's "fitness" by counting
-jumped cactus in the game.
+Each sensor has 3 parameters- value, size and speed. value measures the distance from the obstacle, size measures the width of the obstacle and speed measures the speed of the approaching obstacle.
 
-When an entire generation is completed, we remove the worst genomes until
-achieving `N` genomes. With those `N` genomes, we then select two randomly,
-and cross-over their values/configurations. After that, we apply random mutations
-in the values/configurations of the Neural Network, creating a new genome.
+Speed of all the approaching obstacles are same at an instant. So, speed from the first sensor(refer above) is enough.
 
-We do the cross-over/mutation until we get 12 genomes again, and repeat it constantly.
+So, there are 7 inputs in total. The set of these 7 inputs constitutes a state. An action is carried out depending on the current state. Epsilon-greedy policy is followed (i.e.) a random action occurs with a probability epsilon (0 < epsilon < 1). This is used for exploration, so that the dinosaur may find a better action and improve. 
+
+If the dinosaur crosses a cactus, then a reward of +1 is given. If the dinosaur dies (Game over), then a reward of -1000 is given.
 
 
 ## Implementation
 
-All the implementation was done using Node.js, with Synaptic (Neural Network library),
-and RobotJs (a library to read pixels and simulate key presses).
+All the implementation was done using Node.js, Reinforcejs (Reinforcement Learning library, developed by karpathy-> https://github.com/karpathy/reinforcejs), and RobotJs (a library to read pixels and simulate key presses).
 
 There are a few files in the project:
 
@@ -76,13 +69,13 @@ There are a few files in the project:
   to the game. Is also responsible for computing points, getting the game state and
   triggering callbacks/listeners to real implementation.
 
-- `Learner.js`: It is the core implementation of the Genetic Algorithm. This is where
-  "magic" happens, by running generations, doing "natural" selection, cross-over, mutation...
+- `Learner.js`: It is the core implementation of Reinforcement Learning. This is where
+  "magic" happens, by executing an action, finding its reward which is used by the agent for 	     learning. 
 
 
-### How to: Load a genome
+### How to: Load a play
 
-1. Make sure Genome is inside `genomes` folder with a `.json` extension
+1. Make sure the play is inside `plays` folder with a `.json` extension
 2. Run the program
 3. Click the list in the terminal
 4. Navigate up/down to the wanted file
@@ -95,13 +88,7 @@ The dino game has a anoying bug: It starts to "drift" to the right with time
 making the dino to be wrong offseted from the origin of the game. That, makes
 the program to read the dino as a cactus, since it is the same color.
 
-You can fix that by continuously refreshing the page, or, by pasting this code inside the 
-console in the element inspector:
-
-```
-// Make sure the dino does not drift to the right
-setInterval(function (){Runner.instance_.tRex.xPos = 21}, 2000)
-```
+This bug is being avoided by the program as it refreshes the page after a game is over
 
 ## Development guidelines
 
