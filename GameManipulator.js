@@ -5,10 +5,12 @@ var screenSize = robot.getScreenSize();
 
 var Scanner = require ('./Scanner');
 
+var Learner = require('./Learner');
+
 // COLOR DEFINITIONS
 // This is the Dino's colour, also used by Obstacles.
 var COLOR_DINOSAUR = '535353';
-var DARK_COLOR_DINO = 'ACACAC';
+var COLOR_DINOSAUR_INVERTED = 'ACACAC';
 
 var GameManipulator = {
 
@@ -18,6 +20,11 @@ var GameManipulator = {
 
   // Stores points (jumps)
   points: 0,
+
+  //Stores reward
+  reward: 0,
+  maxReward: 0,
+  maxRewardPlayNum: 0,
 
   // Listners
   onGameEnd: null,
@@ -33,13 +40,48 @@ var GameManipulator = {
   // Stores an array of "sensors" (Ray tracings)
   // Positions are always relative to global "offset"
   sensors: [
-    {
+    {//Sensor for the detection of small cacti
       lastValue: 1,
 
       value: null,
-      offset: [84, -15], // 64,-15
+      offset: [90,-20],
+      //offset: [84, -15],
       step: [4, 0],
-      length: 0.3,
+      length: 0.6,
+
+      // Speed
+      speed: 0,
+      lastComputeSpeed: 0,
+
+      // Computes size of the object
+      size: 0,
+      computeSize: true,
+    },
+    {//Sensor for the detection of large cacti
+      lastValue: 1,
+
+      value: null,
+      //offset: [69, -40], 
+      offset: [90,-40],
+      step: [4, 0],
+      length: 0.6,
+
+      // Speed
+      speed: 0,
+      lastComputeSpeed: 0,
+
+      // Computes size of the object
+      size: 0,
+      computeSize: true,
+    },
+    {//Sensor for the detection of pterodactyls
+      lastValue: 1,
+
+      value: null,
+      //offset: [69, -60], 
+      offset: [90,-60],
+      step: [4, 0],
+      length: 0.6,
 
       // Speed
       speed: 0,
@@ -52,19 +94,41 @@ var GameManipulator = {
   ]
 };
 
+//Checks whether it is inverted (Night)
+GameManipulator.isInverted = function (){
+  //Checking if GameManipulator.offset exists
+  if(GameManipulator.offset){
+    if(robot.getPixelColor(GameManipulator.offset[0]+1,GameManipulator.offset[1]+25) == '000000')
+      return true;
+    else
+      return false;
+  }
+  //If GameManipulator.offset does not exist, then game is played for first time, and so not inverted
+  return false;
+}
 
-// Find out dinosaur (fast)
-GameManipulator.findGamePosition = function () {
-  var pos, dinoPos, skipXFast = 15;
+//Returns the color of the dinosaur
+GameManipulator.getDinoColor = function(){
+  if(GameManipulator.isInverted())
+    return COLOR_DINOSAUR_INVERTED;
+  else
+    return COLOR_DINOSAUR;
+}
 
-  for (var x = 20; x < screenSize.width; x+= skipXFast) {
+//First, a random pixel of dinosaur is found.
+//Using this, the leftmost pixel in the horizontal line (start of the game) is found.
+GameManipulator.findDinoPosition = function(){
+	var dinoPos, skipXFast = 15;
+ 	var dinoColor = GameManipulator.getDinoColor();
+
+  	for (var x = 20; x < screenSize.width; x+= skipXFast) {
     dinoPos = Scanner.scanUntil(
       // Start position
       [x, 80],
       // Skip pixels
       [0, skipXFast],
       // Searching Color
-      COLOR_DINOSAUR,
+      dinoColor,
       // Normal mode (not inverse)
       false,
       // Iteration limit
@@ -78,41 +142,49 @@ GameManipulator.findGamePosition = function () {
   if (!dinoPos) {
     return null;
   }
+  return dinoPos;
+}
+
+// Find the start of the game
+GameManipulator.findGamePosition = function () {
+  
+  var dinoColor = GameManipulator.getDinoColor();
+  var dinoPos = GameManipulator.findDinoPosition();
 
   for (var x = dinoPos[0] - 50; x <= dinoPos[0]; x += 1) {
-    pos = Scanner.scanUntil(
+    startPos = Scanner.scanUntil(
       // Start position
       [x, dinoPos[1] - 2],
       // Skip pixels
       [0, 1],
       // Searching Color
-      COLOR_DINOSAUR,
+      dinoColor,
       // Normal mode (not inverse)
       false,
       // Iteration limit
       100);
 
-    if (pos) {
+    if (startPos) {
       break;
     }
   }
 
   // Did actually found? If not, error!
-  if (!pos) {
+  if (!startPos) {
     return null;
   }
 
   // Find the end of the game
-  var endPos = pos;
+  var endPos = startPos;
 
-  while (robot.getPixelColor(endPos[0] + 3, endPos[1]) == COLOR_DINOSAUR) {
+  while (robot.getPixelColor(endPos[0] + 3, endPos[1]) == dinoColor) {
      endPos = Scanner.scanUntil(
         // Start position
         [endPos[0] + 2, endPos[1]],
         // Skip pixels
         [2, 0],
         // Searching Color
-        COLOR_DINOSAUR,
+        dinoColor,
         // Invert mode
         true,
         // Iteration limit
@@ -125,16 +197,17 @@ GameManipulator.findGamePosition = function () {
   }
 
   // Save to allow global access
-  GameManipulator.offset = pos;
-  GameManipulator.width = 600;//endPos[0] - pos[0];
-
-  return pos;
+  GameManipulator.offset = startPos;
+  GameManipulator.width = 600;//endPos[0] - startPos[0];
+ 
+  return startPos;
 };
 
 
 // Read Game state
 // (If game is ended or is playing)
 GameManipulator.readGameState = function () {
+	var dinoColor = GameManipulator.getDinoColor();
   // Read GameOver
   var found = Scanner.scanUntil(
     [
@@ -142,16 +215,18 @@ GameManipulator.readGameState = function () {
       GameManipulator.offset[1] + GameManipulator.gameOverOffset[1]
     ],
 
-    [2, 0], COLOR_DINOSAUR, false, 20);
+    [2, 0], dinoColor, false, 20);
 
   if (found && GameManipulator.gamestate != 'OVER') {
     GameManipulator.gamestate = 'OVER';
 
     // Clear keys
     GameManipulator.setGameOutput(0.5);
+    robot.keyToggle('up', 'up');
+    robot.keyToggle('down', 'up');
 
     // Trigger callback and clear
-    GameManipulator.onGameEnd && GameManipulator.onGameEnd(GameManipulator.points);
+    GameManipulator.onGameEnd && GameManipulator.onGameEnd(GameManipulator.reward);
     GameManipulator.onGameEnd = null;
 
     // console.log('GAME OVER: '+GameManipulator.points);
@@ -161,18 +236,21 @@ GameManipulator.readGameState = function () {
 
     // Clear points
     GameManipulator.points = 0;
+    GameManipulator.reward = 0;
     GameManipulator.lastScore = 0;
 
     // Clear keys
     GameManipulator.setGameOutput(0.5);
 
-    // Clear sensors
-    GameManipulator.sensors[0].lastComputeSpeed = 0;
-    GameManipulator.sensors[0].lastSpeeds = [];
-    GameManipulator.sensors[0].lastValue = 1;
-    GameManipulator.sensors[0].value = 1;
-    GameManipulator.sensors[0].speed = 0;
-    GameManipulator.sensors[0].size = 0;
+    //Clear all sensors
+    for(var k in GameManipulator.sensors){
+      GameManipulator.sensors[k].lastComputeSpeed = 0;
+      GameManipulator.sensors[k].lastSpeeds = [];
+      GameManipulator.sensors[k].lastValue = 1;
+      GameManipulator.sensors[k].value = 1;
+      GameManipulator.sensors[k].speed = 0;
+      GameManipulator.sensors[k].size = 0;
+    }
 
     // Clar Output flags
     GameManipulator.lastOutputSet = 'NONE';
@@ -191,16 +269,19 @@ GameManipulator.readGameState = function () {
 // and call the `next` callback
 var _startKeyInterval;
 GameManipulator.startNewGame = function (next) {
-
+  
   // Refresh state
   GameManipulator.readGameState();
 
   // If game is already over, press space
   if (GameManipulator.gamestate == 'OVER') {
+    //console.log("Reached if of startNewGame");
+
     clearInterval(_startKeyInterval);
 
     // Set start callback
     GameManipulator.onGameStart = function (argument) {
+      //console.log("Reached onGameStart inside startNewGame");
       clearInterval(_startKeyInterval);
       next && next();
     };
@@ -219,8 +300,10 @@ GameManipulator.startNewGame = function (next) {
     GameManipulator.readGameState();
 
   } else {
+    //console.log("Reached else of startNewGame");
     // Wait die, and call recursive action
     GameManipulator.onGameEnd = function () {
+      //console.log("Reached onGameEnd inside startNewGame");
       GameManipulator.startNewGame(next);
     }
   }
@@ -230,49 +313,51 @@ GameManipulator.startNewGame = function (next) {
 
 // reload the page
 GameManipulator.reloadPage = function ()
-{
+{ 
+  var startTime = Date.now();
   // retrieves platform
   var platform = process.platform;
 
-  if(/^win/.test(process.platform)) {
-    robot.keyTap('r','control');
-  } else if(/^darwin/.test(process.platform)) {
+  if(/^darwin/.test(process.platform)) {
     robot.keyTap('r','command');
   }
+  else{
+    robot.keyTap('r','control');
+  }
+  robot.keyTap(' ');
 }
 
 
 // Compute points based on sensors
-//
-// Basicaly, checks if an object has
-// passed trough the sensor and the
-// value is now higher than before
+// Basicaly, checks if an object has passed trough the sensor and the value is now higher than before
 GameManipulator.computePoints = function () {
   for (var k in GameManipulator.sensors) {
     var sensor = GameManipulator.sensors[k];
-
-    if (sensor.value > 0.5 && sensor.lastValue < 0.3) {
-      GameManipulator.points++;
-      // console.log('POINTS: '+GameManipulator.points);
+    
+    if(sensor.value > 0.4 && sensor.lastValue < 0.2){
+      GameManipulator.reward++;
     }
+  } 
+  
+  //In case of a large cactus, both sensor[0] and sensor[1] will satisfy the above condition. So, points is incremented twice.
+  //This code removes this extra point
+  if(GameManipulator.sensors[0].value > 0.4 && GameManipulator.sensors[0].lastValue < 0.2 
+    && GameManipulator.sensors[1].value > 0.4 && GameManipulator.sensors[1].lastValue < 0.2){
+    GameManipulator.reward--;
+  }
+  if(GameManipulator.reward >= GameManipulator.maxReward){
+    GameManipulator.maxReward = GameManipulator.reward;
+    GameManipulator.maxRewardPlayNum = Learner.playCount;
   }
 }
 
-
 // Read sensors
-//
-// Sensors are like ray-traces:
-//   They have a starting point,
-//   and a limit to search for.
-//
-// Each sensor can gatter data about
-// the DISTANCE of the object, it's
-// SIZE and it's speed
-//
-// Note: We currently only have a sensor.
+// Sensors are like ray-traces: They have a starting point, and a limit to search for.
+// Each sensor can gatter data about the DISTANCE of the object, it's SIZE and it's speed
+// Note: There are currently 3 sensors.
 GameManipulator.readSensors = function () {
   var offset = GameManipulator.offset;
-
+  var dinoPos = GameManipulator.findDinoPosition();
   var startTime = Date.now();
 
   for (var k in GameManipulator.sensors) {
@@ -280,13 +365,9 @@ GameManipulator.readSensors = function () {
     var sensor = GameManipulator.sensors[k];
 
     // Calculate absolute position of ray tracing
-    var start = [
-      offset[0] + sensor.offset[0],
-      offset[1] + sensor.offset[1],
-    ];
+    var start = [dinoPos[0] + 50, offset[1] + sensor.offset[1]];
 
-    // Compute cursor forwarding
-    var forward = sensor.value * GameManipulator.width * 0.8 * sensor.length;
+    var dinoColor = GameManipulator.getDinoColor();
 
     var end = Scanner.scanUntil(
       // console.log(
@@ -295,7 +376,7 @@ GameManipulator.readSensors = function () {
         // Skip pixels
         sensor.step,
         // Searching Color
-        COLOR_DINOSAUR,
+        dinoColor,
         // Invert mode?
         false,
         // Iteration limit
@@ -312,7 +393,7 @@ GameManipulator.readSensors = function () {
       var endPoint = Scanner.scanUntil(
         [end[0] + 75, end[1]],
         [-2, 0],
-        COLOR_DINOSAUR,
+        dinoColor,
         false,
         75 / 2
       );
@@ -323,7 +404,7 @@ GameManipulator.readSensors = function () {
       }
 
       var sizeTmp = (endPoint[0] - end[0]) / 100.0;
-      if (GameManipulator.points == sensor.lastScore) {
+      if (GameManipulator.reward == sensor.lastScore) {
         // It's the same obstacle. Set size to "max" of both
         sensor.size = Math.max(sensor.size, sizeTmp);
       } else {
@@ -332,7 +413,7 @@ GameManipulator.readSensors = function () {
 
 
       // We use the current score to check for object equality
-      sensor.lastScore = GameManipulator.points;
+      sensor.lastScore = GameManipulator.reward;
 
       // sensor.size = Math.max(sensor.size, endPoint[0] - end[0]);
 
@@ -341,28 +422,10 @@ GameManipulator.readSensors = function () {
       sensor.size = 0;
     }
 
-    // Compute speed
     var dt = (Date.now() - sensor.lastComputeSpeed) / 1000;
     sensor.lastComputeSpeed = Date.now();
-
     if (sensor.value < sensor.lastValue) {
-      // Compute speed
-      var newSpeed = (sensor.lastValue - sensor.value) / dt;
-
-      sensor.lastSpeeds.unshift(newSpeed);
-
-      while (sensor.lastSpeeds.length > 10) {
-        sensor.lastSpeeds.pop();
-      }
-
-      // Take Average
-      var avgSpeed = 0;
-      for (var k in sensor.lastSpeeds) {
-        avgSpeed += sensor.lastSpeeds[k] / sensor.lastSpeeds.length;
-      }
-
-      sensor.speed = Math.max(avgSpeed - 1.5, sensor.speed);
-
+      sensor.speed = (sensor.lastValue - sensor.value) / dt;
     }
 
     // Save length/size of sensor value
@@ -381,9 +444,9 @@ GameManipulator.readSensors = function () {
 
 // Set action to game
 // Values:
-//  0.00 to  0.45: DOWN
-//  0.45 to  0.55: NOTHING
-//  0.55 to  1.00: UP (JUMP)
+//  0.0: DOWN (DUCK)
+//  0.5: NOTHING (NORM)
+//  1.0: UP (JUMP)
 var PRESS = 'down';
 var RELEASE = 'up';
 
@@ -395,55 +458,32 @@ GameManipulator.setGameOutput = function (output){
   GameManipulator.gameOutput = output;
   GameManipulator.gameOutputString = GameManipulator.getDiscreteState(output);
 
-  if (GameManipulator.gameOutputString == 'DOWN') {
-    // Skew
+  if (GameManipulator.gameOutputString == 'DUCK') {
     robot.keyToggle('up', RELEASE);
     robot.keyToggle('down', PRESS);
   } else if (GameManipulator.gameOutputString == 'NORM') {
     // DO Nothing
-    robot.keyToggle('up', RELEASE);
-    robot.keyToggle('down', RELEASE);
   } else {
-
-    // Filter JUMP
-    if (GameManipulator.lastOutputSet != 'JUMP') {
-      GameManipulator.lastOutputSetTime = Date.now();
-    }
-
-    // JUMP
-    // Check if hasn't jump for more than 3 continuous secconds
-    if (Date.now() - GameManipulator.lastOutputSetTime < 3000) {
-      robot.keyToggle('up', PRESS);
-      robot.keyToggle('down', RELEASE);
-    } else {
-      robot.keyToggle('up', RELEASE);
-      robot.keyToggle('down', RELEASE);
-    }
-
+    robot.keyToggle('up', PRESS);
+    robot.keyToggle('down', RELEASE);
   }
 
   GameManipulator.lastOutputSet = GameManipulator.gameOutputString;
 }
 
-
-//
-// Simply maps an real number to string actions
-//
+// This function maps a real number to the corresponding string action
 GameManipulator.getDiscreteState = function (value){
-  if (value < 0.45) {
-    return 'DOWN'
-  } else if(value > 0.55) {
+  if (value == 0.0) {
+    return 'DUCK';
+  } else if(value == 1.0) {
     return 'JUMP';
-  }
-
-  return 'NORM';
+  } else{
+    return 'NORM';
+  } 
 }
 
-
-// Click on the Starting point
-// to make sure game is focused
+// Click on the starting point to make sure game is focused
 GameManipulator.focusGame = function (){
-  robot.moveMouse(GameManipulator.offset[0], GameManipulator.offset[1]);
   robot.mouseClick('left');
 }
 

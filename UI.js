@@ -1,30 +1,34 @@
 var contrib = require('blessed-contrib')
 var blessed = require('blessed')
 var fs = require('fs');
+var robot = require('robotjs');
 
 var screen = blessed.screen()
 
 var UI = {};
+
 var savegame = function(){
-  var jsonGenomes = [];
-  for (var k in UI.learner.genomes) {
-    jsonGenomes.push(UI.learner.genomes[k].toJSON());
+  if(!UI.learner.agent){
+    UI.logger.log('Agent is empty');
+  }else{
+    var jsonPlay = UI.learner.agent.toJSON();
+
+    UI.logger.log('Saving the play...');
+
+    var dir = './plays';
+    var fileName = dir + '/play_'+UI.learner.playCount+'_'+UI.gm.reward+'_'+Date.now()+'.json';
+    fs.writeFile(fileName, JSON.stringify(jsonPlay), function (err){
+      if (err) {
+        UI.logger.log('Failed to save! '+err);
+      } else {
+        UI.logger.log('Saved to '+fileName);
+      }
+
+      UI.refreshFiles();
+    });
+  
   }
-
-  UI.logger.log('Saving '+jsonGenomes.length+' genomes...');
-
-  var dir = './genomes';
-  var fileName = dir + '/gen_'+UI.learner.generation+'_'+Date.now()+'.json';
-  fs.writeFile(fileName, JSON.stringify(jsonGenomes), function (err){
-    if (err) {
-      UI.logger.log('Failed to save! '+err);
-    } else {
-      UI.logger.log('Saved to '+fileName);
-    }
-
-    UI.refreshFiles();
-  });
-
+  
 };
 
 
@@ -44,7 +48,7 @@ UI.init = function (gameManipulator, learner) {
   UI.uiSensors = UI.grid.set(0, 0, 3, 6, contrib.bar, {
     label: 'Network Inputs',
     // bg: 'white',
-    barWidth: 12,
+    barWidth: 4,
     barSpacing: 1,
     xOffset: 0,
     maxHeight: 100,
@@ -71,7 +75,7 @@ UI.init = function (gameManipulator, learner) {
 
   // Current Genomes stats
   UI.uiGenomes = UI.grid.set(6, 3, 3, 3, blessed.Text, {
-    label: 'Genome Stats',
+    label: 'Play Stats',
     // bg: 'green',
     fg: 'white',
     content: 'Hey!',
@@ -93,12 +97,12 @@ UI.init = function (gameManipulator, learner) {
     if (item.isFile) {
       var fileName = item.name;
 
-      UI.logger.log('Loading genomes from file:');
+      UI.logger.log('Loading the play from file:');
       UI.logger.log(fileName);
 
-      var genomes = require('./genomes/'+fileName);
+      var play = require('./plays/'+fileName);
 
-      UI.learner.loadGenomes(genomes);
+      UI.learner.loadPlay(play);
     } else {
       UI.refreshFiles();
     }
@@ -112,7 +116,7 @@ UI.init = function (gameManipulator, learner) {
     label: 'Save to File',
     bg: 'green',
     fg: 'red',
-    content: '\n\n\n\nSave Genomes',
+    content: '\n\n\n\nSave The Play',
     align: 'center',
   });
 
@@ -130,6 +134,8 @@ UI.init = function (gameManipulator, learner) {
       learner.startLearning();
     } else {
       learner.state = 'STOP';
+      robot.keyToggle('up', 'up');
+      robot.keyToggle('down', 'up');
     }
   });
 
@@ -149,8 +155,8 @@ UI.refreshFiles = function (){
   };
 
   // Populate tree
-  UI.logger.log('Reading genomes dir...')
-  var files = fs.readdirSync('./genomes');
+  UI.logger.log('Reading plays directory...')
+  var files = fs.readdirSync('./plays');
   for (var k in files) {
     if (files[k].indexOf('.json') >= 0) {
 
@@ -171,11 +177,17 @@ UI.render = function () {
 
   // Update data
   UI.uiSensors.setData({
-    titles: ['Distance', 'Size', 'Speed', 'Activation'],
+    titles: ['Distance 1', 'Size 1', 'Speed 1', 'Distance 2', 'Size 2', 'Speed 2', 'Distance 3', 'Size 3', 'Speed 3', 'Activation'],
     data: [
       Math.round(UI.gm.sensors[0].value * 100),
       Math.round(UI.gm.sensors[0].size * 100),
       Math.round(UI.gm.sensors[0].speed * 100),
+      Math.round(UI.gm.sensors[1].value * 100),
+      Math.round(UI.gm.sensors[1].size * 100),
+      Math.round(UI.gm.sensors[1].speed * 100),
+      Math.round(UI.gm.sensors[2].value * 100),
+      Math.round(UI.gm.sensors[2].size * 100),
+      Math.round(UI.gm.sensors[2].speed * 100),
       Math.round(UI.gm.gameOutput * 100),
     ]
   })
@@ -184,16 +196,18 @@ UI.render = function () {
   var learn = UI.learner;
   var uiStats = '';
   uiStats += 'Status: ' + learn.state + '\n';
-  uiStats += 'Fitness: ' + UI.gm.points + '\n';
+  uiStats += 'Play: ' + learn.playCount + '\n';
+  uiStats += 'Reward: ' + UI.gm.reward + '\n';
   uiStats += 'GameStatus: ' + UI.gm.gamestate + '\n';
-  uiStats += 'Generation: ' + learn.generation;
-  uiStats += ' : ' + learn.genome + '/' + learn.genomes.length;
+  uiStats += 'Inverted: ' + UI.gm.isInverted();
   UI.uiScore.setText(uiStats);
 
-  if (UI.gm.gameOutput) {
+  if (UI.gm.gameOutputString) {
     var str = '';
-    str += 'Action: ' + UI.gm.gameOutputString + '\n'
-    str += 'Activation: ' + UI.gm.gameOutput;
+    str += 'Action: ' + UI.gm.gameOutputString + '\n';
+    str += 'Activation: ' + UI.gm.gameOutput + '\n';
+    str += 'Maximum Reward: ' + UI.gm.maxReward + '\n';
+    str += 'Achieved at Play: ' + UI.gm.maxRewardPlayNum + '\n';
     UI.uiGenomes.setText(str);
   } else {
     UI.uiGenomes.setText('Loading...');

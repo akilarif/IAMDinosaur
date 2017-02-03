@@ -34,12 +34,12 @@ UI.init(GameManipulator, Learner);
 
 
 // Init Learner
-Learner.init(GameManipulator, UI, 12, 4, 0.2);
+Learner.init(GameManipulator, UI);
 
 
 // Start reading game state and sensors
 setInterval(GameManipulator.readSensors, 40);
-setInterval(GameManipulator.readGameState, 200);
+setInterval(GameManipulator.readGameState, 80);
 
 
 // Start game (Example of API usage)
